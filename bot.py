@@ -24,7 +24,6 @@ from aiogram.types import (
 
 # ─────────────────────── CONFIG ───────────────────────
 
-# ✅ TO'G'RI
 BOT_TOKEN: str = "8724276114:AAHYzEuD3fhar1QDZWrON35-NXIXss-kf1I"
 OWNER_ID: int = 8378615092
 DATA_FILE: str = "data.json"
@@ -37,6 +36,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ─────────────────────── DEFAULT DATA ─────────────────
+DEFAULT_DATA: dict[str, Any] = {
+    "users": {
+        "8378615092": {
+            "name": "Azizbek",
+            "username": "aziiik11"
+        }
+    },
+    "movies": {},
+    "admins": [],
+    "supports": [],
+    "channels": [
+        "-1003298328766"
+    ]
+}
+
 # ─────────────────────── DATABASE ─────────────────────
 
 def load_data() -> dict[str, Any]:
@@ -44,7 +59,8 @@ def load_data() -> dict[str, Any]:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"users": {}, "movies": {}, "admins": [], "supports": [], "channels": []}
+        import copy
+        return copy.deepcopy(DEFAULT_DATA)
 
 
 def save_data(data: dict[str, Any]) -> None:
