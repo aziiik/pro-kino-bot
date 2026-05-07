@@ -2,7 +2,10 @@ import asyncio
 import json
 import logging
 import os
+import copy
 from typing import Any
+
+from dotenv import load_dotenv
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
@@ -24,9 +27,16 @@ from aiogram.types import (
 
 # ─────────────────────── CONFIG ───────────────────────
 
-BOT_TOKEN: str = "8724276114:AAHYzEuD3fhar1QDZWrON35-NXIXss-kf1I"
-OWNER_ID: int = 8378615092
-DATA_FILE: str = "data.json"
+load_dotenv()
+
+BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
+OWNER_ID: int = int(os.getenv("OWNER_ID", "0"))
+DATA_FILE: str = os.getenv("DATA_FILE", "data.json")
+
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN .env faylida ko'rsatilmagan!")
+if OWNER_ID == 0:
+    raise ValueError("OWNER_ID .env faylida ko'rsatilmagan!")
 
 # ─────────────────────── LOGGING ──────────────────────
 logging.basicConfig(
@@ -38,18 +48,11 @@ logger = logging.getLogger(__name__)
 
 # ─────────────────────── DEFAULT DATA ─────────────────
 DEFAULT_DATA: dict[str, Any] = {
-    "users": {
-        "8378615092": {
-            "name": "Azizbek",
-            "username": "aziiik11"
-        }
-    },
+    "users": {},
     "movies": {},
     "admins": [],
     "supports": [],
-    "channels": [
-        "-1003298328766"
-    ]
+    "channels": []
 }
 
 # ─────────────────────── DATABASE ─────────────────────
@@ -59,7 +62,6 @@ def load_data() -> dict[str, Any]:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        import copy
         return copy.deepcopy(DEFAULT_DATA)
 
 
@@ -203,8 +205,6 @@ async def send_subscribe_message(message: Message, channels: list[str]) -> None:
 router = Router()
 
 
-# ──────────── /start ────────────
-
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
@@ -236,13 +236,10 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     )
 
 
-# ──────────── Subscription callback ────────────
-
 @router.callback_query(F.data == "check_sub")
 async def cb_check_sub(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     user_id = call.from_user.id
-
     subscribed = await check_subscriptions(call.bot, user_id)
     if subscribed:
         await call.message.delete()
@@ -257,8 +254,6 @@ async def cb_check_sub(call: CallbackQuery, state: FSMContext) -> None:
     else:
         await call.answer("❌ Hali barcha kanallarga obuna bo'lmadingiz!", show_alert=True)
 
-
-# ──────────── /admin ────────────
 
 @router.message(Command("admin"))
 async def cmd_admin(message: Message, state: FSMContext) -> None:
@@ -288,8 +283,6 @@ async def back_handler(message: Message, state: FSMContext) -> None:
     await message.answer("🏠 Asosiy menyu:", reply_markup=main_kb(message.from_user.id))
 
 
-# ──────────── Movie search ────────────
-
 @router.message(F.text == "🎬 Kino qidirish")
 async def movie_search_prompt(message: Message, state: FSMContext) -> None:
     await state.clear()
@@ -302,8 +295,6 @@ async def movie_search_prompt(message: Message, state: FSMContext) -> None:
             return
     await message.answer("🔢 Kino kodini kiriting:", reply_markup=ReplyKeyboardRemove())
 
-
-# ──────────── Add Movie ────────────
 
 @router.message(F.text == "➕ Kino qo'shish")
 async def add_movie_start(message: Message, state: FSMContext) -> None:
@@ -332,18 +323,15 @@ async def add_movie_code(message: Message, state: FSMContext) -> None:
 async def add_movie_file(message: Message, state: FSMContext) -> None:
     data_state = await state.get_data()
     code = data_state["code"]
-
     if message.video:
         file_id = message.video.file_id
         file_type = "video"
     else:
         file_id = message.document.file_id
         file_type = "document"
-
     data = load_data()
     data["movies"][code] = {"file_id": file_id, "type": file_type}
     save_data(data)
-
     await state.clear()
     logger.info("Kino qo'shildi: kod=%s, type=%s", code, file_type)
     await message.answer(
@@ -357,8 +345,6 @@ async def add_movie_file(message: Message, state: FSMContext) -> None:
 async def add_movie_file_wrong(message: Message, state: FSMContext) -> None:
     await message.answer("❌ Iltimos, video yoki fayl yuboring.")
 
-
-# ──────────── Delete Movie ────────────
 
 @router.message(F.text == "🗑 Kino o'chirish")
 async def delete_movie_start(message: Message, state: FSMContext) -> None:
@@ -388,8 +374,6 @@ async def delete_movie_code(message: Message, state: FSMContext) -> None:
     )
 
 
-# ──────────── Add Admin ────────────
-
 @router.message(F.text == "👤 Admin qo'shish")
 async def add_admin_start(message: Message, state: FSMContext) -> None:
     await state.clear()
@@ -408,25 +392,20 @@ async def add_admin_id(message: Message, state: FSMContext) -> None:
     except ValueError:
         await message.answer("❌ Noto'g'ri ID. Raqam kiriting:")
         return
-
     if target_id == OWNER_ID:
         await state.clear()
         await message.answer("❌ Owner ni admin qilib bo'lmaydi.", reply_markup=admin_kb(message.from_user.id))
         return
-
     data = load_data()
     if str(target_id) not in data["users"]:
         await message.answer("❌ Bu foydalanuvchi botda ro'yxatdan o'tmagan (/start bosmagan).")
         return
-
     if target_id in data["admins"]:
         await state.clear()
         await message.answer("⚠️ Bu foydalanuvchi allaqachon admin.", reply_markup=admin_kb(message.from_user.id))
         return
-
     if target_id in data["supports"]:
         data["supports"].remove(target_id)
-
     data["admins"].append(target_id)
     save_data(data)
     await state.clear()
@@ -436,8 +415,6 @@ async def add_admin_id(message: Message, state: FSMContext) -> None:
         reply_markup=admin_kb(message.from_user.id),
     )
 
-
-# ──────────── Remove Admin ────────────
 
 @router.message(F.text == "❌ Admin o'chirish")
 async def remove_admin_start(message: Message, state: FSMContext) -> None:
@@ -466,12 +443,10 @@ async def remove_admin_id(message: Message, state: FSMContext) -> None:
     except ValueError:
         await message.answer("❌ Noto'g'ri ID. Raqam kiriting:")
         return
-
     data = load_data()
     if target_id not in data["admins"]:
         await message.answer("❌ Bu foydalanuvchi admin emas.")
         return
-
     data["admins"].remove(target_id)
     save_data(data)
     await state.clear()
@@ -481,8 +456,6 @@ async def remove_admin_id(message: Message, state: FSMContext) -> None:
         reply_markup=admin_kb(message.from_user.id),
     )
 
-
-# ──────────── Add Support ────────────
 
 @router.message(F.text == "🤝 Support qo'shish")
 async def add_support_start(message: Message, state: FSMContext) -> None:
@@ -502,27 +475,22 @@ async def add_support_id(message: Message, state: FSMContext) -> None:
     except ValueError:
         await message.answer("❌ Noto'g'ri ID. Raqam kiriting:")
         return
-
     if target_id == OWNER_ID:
         await state.clear()
         await message.answer("❌ Owner ni support qilib bo'lmaydi.", reply_markup=admin_kb(message.from_user.id))
         return
-
     data = load_data()
     if str(target_id) not in data["users"]:
         await message.answer("❌ Bu foydalanuvchi botda ro'yxatdan o'tmagan (/start bosmagan).")
         return
-
     if target_id in data["supports"]:
         await state.clear()
         await message.answer("⚠️ Bu foydalanuvchi allaqachon support.", reply_markup=admin_kb(message.from_user.id))
         return
-
     if target_id in data["admins"]:
         await state.clear()
         await message.answer("⚠️ Bu foydalanuvchi admin. Avval admin lavozimini oling.", reply_markup=admin_kb(message.from_user.id))
         return
-
     data["supports"].append(target_id)
     save_data(data)
     await state.clear()
@@ -532,8 +500,6 @@ async def add_support_id(message: Message, state: FSMContext) -> None:
         reply_markup=admin_kb(message.from_user.id),
     )
 
-
-# ──────────── Remove Support ────────────
 
 @router.message(F.text == "➖ Support o'chirish")
 async def remove_support_start(message: Message, state: FSMContext) -> None:
@@ -562,12 +528,10 @@ async def remove_support_id(message: Message, state: FSMContext) -> None:
     except ValueError:
         await message.answer("❌ Noto'g'ri ID. Raqam kiriting:")
         return
-
     data = load_data()
     if target_id not in data["supports"]:
         await message.answer("❌ Bu foydalanuvchi support emas.")
         return
-
     data["supports"].remove(target_id)
     save_data(data)
     await state.clear()
@@ -577,8 +541,6 @@ async def remove_support_id(message: Message, state: FSMContext) -> None:
         reply_markup=admin_kb(message.from_user.id),
     )
 
-
-# ──────────── Channels ────────────
 
 @router.message(F.text == "📡 Majburiy obuna")
 async def channels_panel(message: Message, state: FSMContext) -> None:
@@ -622,12 +584,10 @@ async def add_channel_save(message: Message, state: FSMContext) -> None:
         logger.warning("Kanal tekshirishda xato: %s", e)
         await message.answer("❌ Kanal topilmadi yoki bot admin emas. Qaytadan kiriting:")
         return
-
     if channel_id in data["channels"]:
         await state.clear()
         await message.answer("⚠️ Bu kanal allaqachon qo'shilgan.", reply_markup=channel_kb())
         return
-
     data["channels"].append(channel_id)
     save_data(data)
     await state.clear()
@@ -670,11 +630,9 @@ async def remove_channel_save(message: Message, state: FSMContext) -> None:
                 target = cid
         except Exception:
             pass
-
     if target is None:
         await message.answer("❌ Bunday kanal topilmadi. Qaytadan kiriting:")
         return
-
     data["channels"].remove(target)
     save_data(data)
     await state.clear()
@@ -698,8 +656,6 @@ async def list_channels(message: Message, state: FSMContext) -> None:
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=channel_kb())
 
 
-# ──────────── Broadcast ────────────
-
 @router.message(F.text == "📢 Reklama")
 async def broadcast_start(message: Message, state: FSMContext) -> None:
     await state.clear()
@@ -721,9 +677,7 @@ async def broadcast_send(message: Message, state: FSMContext) -> None:
     users = list(data["users"].keys())
     sent = 0
     failed = 0
-
     await message.answer(f"📤 Reklama yuborilmoqda... ({len(users)} ta foydalanuvchi)")
-
     for uid_str in users:
         uid = int(uid_str)
         try:
@@ -738,15 +692,12 @@ async def broadcast_send(message: Message, state: FSMContext) -> None:
         except Exception as e:
             logger.warning("Reklama yuborishda xato (%d): %s", uid, e)
             failed += 1
-
     logger.info("Reklama yakunlandi: sent=%d, failed=%d", sent, failed)
     await message.answer(
         f"✅ Reklama yakunlandi!\n\n📬 Yuborildi: {sent}\n❌ Xato: {failed}",
         reply_markup=admin_kb(message.from_user.id),
     )
 
-
-# ──────────── Statistics ────────────
 
 @router.message(F.text == "📊 Statistika")
 async def statistics(message: Message, state: FSMContext) -> None:
@@ -768,34 +719,27 @@ async def statistics(message: Message, state: FSMContext) -> None:
     )
 
 
-# ──────────── Movie by code ────────────
-
 @router.message(F.text)
 async def handle_movie_code(message: Message, state: FSMContext) -> None:
     current_state = await state.get_state()
     if current_state is not None:
         return
-
     user_id = message.from_user.id
     data = load_data()
-
     channels = data.get("channels", [])
     if channels:
         subscribed = await check_subscriptions(message.bot, user_id)
         if not subscribed:
             await send_subscribe_message(message, channels)
             return
-
     code = message.text.strip()
     movie = data["movies"].get(code)
-
     if not movie:
         await message.answer(
             f"❌ <code>{code}</code> kodli kino topilmadi.\nKino kodini to'g'ri kiriting.",
             parse_mode=ParseMode.HTML,
         )
         return
-
     try:
         if movie["type"] == "video":
             await message.answer_video(
@@ -824,7 +768,6 @@ async def main() -> None:
     )
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
-
     logger.info("Bot ishga tushmoqda...")
     await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
 
